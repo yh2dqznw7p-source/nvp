@@ -1,0 +1,30 @@
+name: NVP
+version: '${project.version}'
+main: dev.nvp.NvpPlugin
+api-version: '1.21'
+author: nvp
+description: Neural-assisted anti-cheat (KillAura/Reach/Speed/Scaffold).
+
+commands:
+  nvp:
+    description: NVP anti-cheat root command.
+    usage: /nvp dataset|message|autoban|check|flag ...
+
+permissions:
+  nvp.command.*:
+    description: Full access to NVP commands.
+    default: op
+    children:
+      nvp.command.dataset: true
+      nvp.command.message: true
+      nvp.command.autoban: true
+      nvp.command.check: true
+      nvp.command.flag: true
+  nvp.command.dataset: { default: op }
+  nvp.command.message: { default: op }
+  nvp.command.autoban: { default: op }
+  nvp.command.check:   { default: op }
+  nvp.command.flag:    { default: op }
+  nvp.notify:
+    description: Receives anti-cheat alert messages.
+    default: op

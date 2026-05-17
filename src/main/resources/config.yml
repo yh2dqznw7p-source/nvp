@@ -1,0 +1,11 @@
+autoban:
+  enabled: false
+  threshold: 0.85          # probability above which to auto-ban
+  command: "ban %player% [NVP] Cheating detected (%score%)"
+
+messages:
+  default-on: true         # default state for /nvp message on/off
+
+model:
+  k: 7                      # k for k-NN
+  hologram-window: 6        # last N hit scores shown above player
