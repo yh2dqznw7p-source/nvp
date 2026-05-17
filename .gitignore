@@ -1,6 +1,6 @@
-.gradle/
-build/
+target/
 .idea/
 *.iml
 out/
 datasets/
+.vscode/
