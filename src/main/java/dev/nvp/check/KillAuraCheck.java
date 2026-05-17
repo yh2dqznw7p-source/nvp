@@ -1,74 +1,75 @@
 package dev.nvp.check;
 
-import dev.nvp.ml.HitSample;
-import dev.nvp.ml.KnnModel;
+import dev.nvp.ml.dataset.LabelledSample;
+import dev.nvp.ml.feature.FeatureSchema;
+import dev.nvp.ml.feature.FeatureVector;
+import dev.nvp.ml.model.Model;
+import dev.nvp.state.PlayerSession;
+import dev.nvp.state.history.AttackHistory;
+import dev.nvp.state.history.RotationHistory;
+import dev.nvp.util.RotationUtil;
+import dev.nvp.util.TimingUtil;
+import dev.nvp.util.VectorUtil;
 import org.bukkit.Location;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.List;
 
 /**
- * KillAura check: builds a HitSample from melee event geometry/timing and asks
- * KnnModel for cheat probability. Stateless toward the dataset — recording is
- * handled by CombatListener via PlayerState.Recording.
+ * KillAura check: builds a feature vector from melee event geometry/timing
+ * and asks the bound Model for cheat probability.
  */
 public class KillAuraCheck {
 
-    private final KnnModel model;
+    public static final FeatureSchema SCHEMA = new FeatureSchema(List.of(
+        "yawDelta", "pitchDelta", "aimError", "reach", "cps", "sprint", "sneak", "yDiff"
+    ));
 
-    /** Per-player rolling click timestamps (ms) — for CPS. */
-    private final Map<UUID, long[]> clickRing = new HashMap<>();
-    /** Last yaw/pitch per player. */
-    private final Map<UUID, float[]> lastLook = new HashMap<>();
+    private final Model model;
 
-    public KillAuraCheck(KnnModel model) { this.model = model; }
+    public KillAuraCheck(Model model) { this.model = model; }
 
-    public HitSample buildSample(Player attacker, LivingEntity target, int label) {
+    public FeatureVector buildFeatures(Player attacker, LivingEntity target, PlayerSession sess) {
         Location a = attacker.getLocation();
         Location t = target.getLocation();
 
-        float[] last = lastLook.get(attacker.getUniqueId());
-        double yawDelta = last == null ? 0 : Math.abs(angleDelta(a.getYaw(), last[0]));
-        double pitDelta = last == null ? 0 : Math.abs(a.getPitch() - last[1]);
-        lastLook.put(attacker.getUniqueId(), new float[]{a.getYaw(), a.getPitch()});
+        double yawDelta = 0, pitDelta = 0;
+        RotationHistory rot = sess.rotation();
+        if (rot.size() >= 2) {
+            RotationHistory.Sample now  = rot.raw().get(rot.size() - 1);
+            RotationHistory.Sample prev = rot.raw().get(rot.size() - 2);
+            yawDelta = Math.abs(RotationUtil.yawDelta(now.yaw, prev.yaw));
+            pitDelta = Math.abs(now.pitch - prev.pitch);
+        }
 
         Vector look = a.getDirection();
         Vector toTarget = t.toVector().subtract(a.toVector()).normalize();
-        double dot = Math.max(-1, Math.min(1, look.dot(toTarget)));
-        double aimError = Math.toDegrees(Math.acos(dot));
+        double aimError = VectorUtil.angleBetween(look, toTarget);
 
-        double reach = a.toVector().setY(0).distance(t.toVector().setY(0));
-        double cps   = recordClickAndCps(attacker.getUniqueId());
+        double reach  = a.toVector().setY(0).distance(t.toVector().setY(0));
+        double cps    = sess.clicks().cps(TimingUtil.nowMs());
+        double sprint = attacker.isSprinting() ? 1 : 0;
+        double sneak  = attacker.isSneaking()  ? 1 : 0;
+        double yDiff  = a.getY() - t.getY();
 
-        return new HitSample(
-            yawDelta, pitDelta, aimError, reach, cps,
-            attacker.isSprinting() ? 1 : 0,
-            attacker.isSneaking()  ? 1 : 0,
-            a.getY() - t.getY(),
-            label
-        );
+        sess.attacks().push(new AttackHistory.Hit(
+            TimingUtil.nowMs(), target.getUniqueId(), reach, aimError, a.getYaw(), a.getPitch()));
+
+        return new FeatureVector(SCHEMA, new double[]{
+            yawDelta, pitDelta, aimError, reach, cps, sprint, sneak, yDiff
+        });
     }
 
-    public double predict(HitSample s) { return model.cheatProbability(s); }
-
-    private static double angleDelta(float a, float b) {
-        double d = ((a - b) % 360 + 540) % 360 - 180;
-        return d;
+    public LabelledSample asSample(FeatureVector fv, int label) {
+        return new LabelledSample(fv, label);
     }
 
-    /** Maintains a 20-slot ring of click times; returns CPS over last 1s. */
-    private double recordClickAndCps(UUID id) {
-        long now = System.currentTimeMillis();
-        long[] ring = clickRing.computeIfAbsent(id, x -> new long[20]);
-        // shift left, append now
-        System.arraycopy(ring, 1, ring, 0, ring.length - 1);
-        ring[ring.length - 1] = now;
-        int count = 0;
-        for (long ts : ring) if (ts > 0 && now - ts <= 1000) count++;
-        return count;
+    public double predict(FeatureVector fv) {
+        if (model == null || !model.isTrained()) return 0.0;
+        return model.predictProba(fv.values());
     }
+
+    public Model model() { return model; }
 }

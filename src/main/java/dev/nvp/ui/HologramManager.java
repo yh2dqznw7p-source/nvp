@@ -9,17 +9,10 @@ import org.bukkit.util.Transformation;
 import org.joml.AxisAngle4f;
 import org.joml.Vector3f;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * One TextDisplay per watched player, riding above their head, showing the last
- * N hit scores horizontally (newest on the right). Uses entity passenger to
- * stay attached without per-tick teleporting.
- */
 public class HologramManager {
 
     private final NvpPlugin plugin;
@@ -57,14 +50,14 @@ public class HologramManager {
         });
     }
 
-    /** Update the hologram with the rolling deque of scores from PlayerState. */
-    public void update(Player target, Deque<Double> scores) {
+    /** Render a list of scores (oldest first, newest last) on the hologram. */
+    public void update(Player target, Iterable<Double> scores) {
         TextDisplay d = displays.get(target.getUniqueId());
         if (d == null) return;
         Component line = Component.text("");
         boolean first = true;
-        Deque<Double> snapshot = new ArrayDeque<>(scores);
-        for (Double s : snapshot) {
+        for (Double s : scores) {
+            if (s == null) continue;
             if (!first) line = line.append(Component.text("  "));
             line = line.append(MessageFormatter.hologramLine(s));
             first = false;

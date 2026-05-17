@@ -1,8 +1,8 @@
 package dev.nvp.command;
 
 import dev.nvp.NvpPlugin;
-import dev.nvp.ml.Dataset;
-import dev.nvp.ml.KnnModel;
+import dev.nvp.ml.dataset.LabelledDataset;
+import dev.nvp.ml.model.ModelRegistry;
 import dev.nvp.state.PlayerState;
 import dev.nvp.state.PlayerState.CheckType;
 import dev.nvp.state.StateManager;
@@ -19,25 +19,18 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
-/**
- * /nvp dataset <player>            — toggle clean-PvP recording trigger
- * /nvp message on|off              — enable/disable AC chat alerts
- * /nvp autoban on|off              — enable/disable autoban above threshold
- * /nvp check <type> <player>       — toggle a check trigger (killaura/reach/speed/scaffold)
- * /nvp flag  <type> on|off <player>— enable/disable flagging for a player+check
- */
 public class NvpCommand implements CommandExecutor, TabCompleter {
 
     private final NvpPlugin plugin;
     private final StateManager states;
-    private final Dataset dataset;
-    private final KnnModel model;
+    private final LabelledDataset dataset;
+    private final ModelRegistry models;
 
-    public NvpCommand(NvpPlugin plugin, StateManager states, Dataset dataset, KnnModel model) {
+    public NvpCommand(NvpPlugin plugin, StateManager states, LabelledDataset dataset, ModelRegistry models) {
         this.plugin = plugin;
         this.states = states;
         this.dataset = dataset;
-        this.model = model;
+        this.models = models;
     }
 
     @Override
@@ -75,8 +68,8 @@ public class NvpCommand implements CommandExecutor, TabCompleter {
                 Player target = Bukkit.getPlayerExact(a[2]);
                 if (t == null || target == null) { s.sendMessage("§cBad type or player."); return true; }
                 PlayerState st = states.get(target);
-                boolean on = !st.checking(t);
-                st.checking(t, on);
+                boolean on = !st.watching(t);
+                st.watching(t, on);
                 if (on) plugin.holograms().show(target); else plugin.holograms().hide(target);
                 s.sendMessage("§7[NVP] check " + t.name().toLowerCase() + " on " + target.getName() + ": " + (on ? "§aON" : "§cOFF"));
             }
@@ -88,6 +81,14 @@ public class NvpCommand implements CommandExecutor, TabCompleter {
                 if (t == null || target == null) { s.sendMessage("§cBad type or player."); return true; }
                 states.get(target).flagging(t, parseOn(a[2]));
                 s.sendMessage("§7[NVP] flag " + t.name().toLowerCase() + " on " + target.getName() + ": " + a[2].toLowerCase());
+            }
+            case "info" -> {
+                if (!s.hasPermission("nvp.command.info")) { deny(s); return true; }
+                int n = dataset.size();
+                int[] cc = dataset.classCounts();
+                s.sendMessage("§7[NVP] dataset: " + n + " (clean=" + cc[0] + ", cheat=" + cc[1] + ")");
+                s.sendMessage("§7[NVP] messages: " + states.messagesEnabled() + ", autoban: " + states.autobanEnabled());
+                if (models.has("killaura")) s.sendMessage("§7[NVP] model: " + models.get("killaura").describe());
             }
             default -> usage(s);
         }
@@ -104,12 +105,12 @@ public class NvpCommand implements CommandExecutor, TabCompleter {
     private static void deny(CommandSender s) { s.sendMessage("§cYou don't have permission."); }
 
     private static void usage(CommandSender s) {
-        s.sendMessage("§7[NVP] /nvp dataset|message|autoban|check|flag ...");
+        s.sendMessage("§7[NVP] /nvp dataset|message|autoban|check|flag|info ...");
     }
 
     @Override
     public List<String> onTabComplete(@NotNull CommandSender s, @NotNull Command c, @NotNull String label, @NotNull String[] a) {
-        if (a.length == 1) return List.of("dataset", "message", "autoban", "check", "flag");
+        if (a.length == 1) return List.of("dataset", "message", "autoban", "check", "flag", "info");
         if (a.length == 2) {
             return switch (a[0].toLowerCase(Locale.ROOT)) {
                 case "message", "autoban" -> List.of("on", "off");
