@@ -1,45 +1,50 @@
 package dev.nvp.state;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.EnumMap;
 import java.util.Map;
 
+/**
+ * Lightweight admin/runtime flags for a player: who has triggers on, who is
+ * being recorded into the dataset, per-check flag toggles. Histories live in
+ * PlayerSession.
+ */
 public class PlayerState {
 
-    public enum CheckType { KILLAURA, REACH, SPEED, SCAFFOLD }
+    public enum CheckType {
+        KILLAURA, REACH, AIM, AUTOCLICKER, VELOCITY,
+        SPEED, FLY, NOFALL, JESUS,
+        SCAFFOLD, TOWER, FASTPLACE, NUKER
+    }
 
-    /** Recording mode: feed labelled samples to the dataset. */
-    public enum Recording { OFF, CLEAN /* /nvp dataset */, CHEAT /* future */ }
+    public enum Recording { OFF, CLEAN, CHEAT }
 
     private Recording recording = Recording.OFF;
-    /** Active "watch" triggers — the AC analyses these checks for this player. */
-    private final Map<CheckType, Boolean> checks = new EnumMap<>(CheckType.class);
-    /** Per-check flagging enable/disable (admin override). */
-    private final Map<CheckType, Boolean> flags  = new EnumMap<>(CheckType.class);
-
-    /** Rolling buffer of the last N hit-scores (for the hologram). */
-    private final Deque<Double> recentScores = new ArrayDeque<>();
+    private final Map<CheckType, Boolean> watching = new EnumMap<>(CheckType.class);
+    private final Map<CheckType, Boolean> flagging = new EnumMap<>(CheckType.class);
+    private boolean exempt;
 
     public PlayerState() {
         for (CheckType c : CheckType.values()) {
-            checks.put(c, false);
-            flags.put(c, true); // by default flagging is on
+            watching.put(c, false);
+            flagging.put(c, true);
         }
     }
 
     public Recording recording() { return recording; }
     public void recording(Recording r) { this.recording = r; }
 
-    public boolean checking(CheckType c) { return checks.get(c); }
-    public void checking(CheckType c, boolean v) { checks.put(c, v); }
+    public boolean watching(CheckType c) { return watching.get(c); }
+    public void watching(CheckType c, boolean v) { watching.put(c, v); }
 
-    public boolean flagging(CheckType c) { return flags.get(c); }
-    public void flagging(CheckType c, boolean v) { flags.put(c, v); }
+    public boolean flagging(CheckType c) { return flagging.get(c); }
+    public void flagging(CheckType c, boolean v) { flagging.put(c, v); }
 
-    public Deque<Double> recentScores() { return recentScores; }
-    public void pushScore(double s, int max) {
-        recentScores.addLast(s);
-        while (recentScores.size() > max) recentScores.removeFirst();
+    /** Any watch trigger active? Used to decide whether to spawn a hologram. */
+    public boolean anyWatching() {
+        for (Boolean v : watching.values()) if (v) return true;
+        return false;
     }
+
+    public boolean isExempt() { return exempt; }
+    public void setExempt(boolean v) { this.exempt = v; }
 }
